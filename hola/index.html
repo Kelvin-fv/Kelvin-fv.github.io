@@ -513,8 +513,8 @@
         angle: 0,
       };
 
-      // Reducir movimiento si el usuario lo pide
-      const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      // Reducir movimiento si el usuario lo pide 
+      const reduceMotion = false;
 
       // Helper: clamp para mantener valores dentro de límites
       function clamp(v, min, max) {
