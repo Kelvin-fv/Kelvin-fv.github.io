@@ -1,12 +1,745 @@
 <!doctype html>
 <html lang="es">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Delfi</title>
-  </head>
-  <body>
-    <h1>Julio 👋</h1>
-    <p></p>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Julio el Delfín 🐬</title>
+
+  <style>
+    /* =========================================================================
+       JULIO EL DELFÍN 🐬
+       - Nada automáticamente (animación con JS para control fino).
+       - Podés arrastrarlo con el dedo (follow touch).
+       - Tocás/clickeás y salta fuera del agua (jump).
+       - Todo en un único HTML (sin assets externos).
+       ========================================================================= */
+
+    :root{
+      /* Paleta océano */
+      --deep: #06162f;
+      --mid:  #0a355c;
+      --shallow: #0b77b3;
+
+      /* Espuma/olas */
+      --foamA: rgba(255,255,255,.16);
+      --foamB: rgba(255,255,255,.10);
+
+      /* Texto */
+      --text: rgba(255,255,255,.92);
+
+      /* “Línea de agua” aproximada */
+      --waterline: 58vh;
+    }
+
+    *{ box-sizing: border-box; }
+
+    html, body{
+      height: 100%;
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color: var(--text);
+      overflow: hidden; /* Importante: el océano no debe scrollear */
+      background:
+        radial-gradient(1100px 800px at 20% 10%, rgba(255,255,255,.10), transparent 60%),
+        radial-gradient(900px 700px at 80% 30%, rgba(255,255,255,.07), transparent 60%),
+        linear-gradient(180deg, var(--deep) 0%, var(--mid) 45%, var(--shallow) 100%);
+    }
+
+    /* =========================================================================
+       HUD superior: deja bien claro el nombre.
+       ========================================================================= */
+    .hud{
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      top: 12px;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      text-shadow: 0 2px 18px rgba(0,0,0,.45);
+    }
+
+    .hud .title{
+      margin: 0;
+      font-weight: 800;
+      letter-spacing: .2px;
+      font-size: clamp(18px, 2.9vw, 28px);
+      line-height: 1.1;
+    }
+
+    .hud .sub{
+      margin: 6px 0 0;
+      font-size: clamp(12px, 2.0vw, 14px);
+      opacity: .92;
+      max-width: 52ch;
+      line-height: 1.25;
+    }
+
+    .chip{
+      align-self: flex-start;
+      font-size: 12px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.10);
+      border: 1px solid rgba(255,255,255,.14);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      box-shadow: 0 10px 30px rgba(0,0,0,.20);
+      white-space: nowrap;
+    }
+
+    /* =========================================================================
+       Olas: dos capas que se mueven sutilmente.
+       ========================================================================= */
+    .waves{
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1;
+      opacity: .95;
+    }
+
+    .waves::before,
+    .waves::after{
+      content: "";
+      position: absolute;
+      inset: -25% -10%;
+      background:
+        repeating-linear-gradient(
+          115deg,
+          transparent 0 18px,
+          var(--foamA) 18px 20px,
+          transparent 20px 44px
+        );
+      mix-blend-mode: screen;
+      transform: translate3d(0,0,0);
+      will-change: transform;
+    }
+
+    .waves::before{
+      opacity: .35;
+      animation: driftA 18s linear infinite;
+    }
+    .waves::after{
+      opacity: .22;
+      background:
+        repeating-linear-gradient(
+          75deg,
+          transparent 0 22px,
+          var(--foamB) 22px 24px,
+          transparent 24px 54px
+        );
+      animation: driftB 26s linear infinite reverse;
+    }
+
+    @keyframes driftA{
+      0%{ transform: translateX(-6%) translateY(0%); }
+      100%{ transform: translateX(6%) translateY(1%); }
+    }
+    @keyframes driftB{
+      0%{ transform: translateX(-10%) translateY(0%); }
+      100%{ transform: translateX(10%) translateY(2%); }
+    }
+
+    /* =========================================================================
+       Línea de agua (visual sutil) para que el salto se note.
+       ========================================================================= */
+    .waterline{
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: var(--waterline);
+      height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.20), transparent);
+      opacity: .55;
+      z-index: 2;
+      pointer-events: none;
+      filter: blur(.2px);
+    }
+
+    /* =========================================================================
+       Burbujas: algunas automáticas + algunas “event bubbles” creadas por JS.
+       ========================================================================= */
+    .bubbles{
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .bubble{
+      position: absolute;
+      bottom: -90px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.85), rgba(255,255,255,.15) 55%, rgba(255,255,255,.06));
+      border: 1px solid rgba(255,255,255,.18);
+      opacity: .55;
+      animation: bubbleUp 10s linear infinite;
+    }
+
+    @keyframes bubbleUp{
+      0%   { transform: translateY(0) translateX(0); opacity: 0; }
+      10%  { opacity: .55; }
+      100% { transform: translateY(-120vh) translateX(28px); opacity: 0; }
+    }
+
+    .bubble:nth-child(1){ left: 10%; width: 10px; height: 10px; animation-duration: 9s;  animation-delay: -1s; }
+    .bubble:nth-child(2){ left: 22%; width: 16px; height: 16px; animation-duration: 12s; animation-delay: -5s; }
+    .bubble:nth-child(3){ left: 38%; width: 12px; height: 12px; animation-duration: 10s; animation-delay: -2s; }
+    .bubble:nth-child(4){ left: 55%; width: 18px; height: 18px; animation-duration: 14s; animation-delay: -9s; }
+    .bubble:nth-child(5){ left: 70%; width: 11px; height: 11px; animation-duration: 11s; animation-delay: -4s; }
+    .bubble:nth-child(6){ left: 84%; width: 15px; height: 15px; animation-duration: 13s; animation-delay: -7s; }
+
+    /* Burbujas creadas por JS (cuando salta / cuando arrastrás) */
+    .event-bubble{
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.9), rgba(255,255,255,.15) 60%, rgba(255,255,255,0));
+      border: 1px solid rgba(255,255,255,.18);
+      opacity: .7;
+      transform: translate(-50%, -50%);
+      animation: eventBubble 900ms ease-out forwards;
+      pointer-events: none;
+    }
+
+    @keyframes eventBubble{
+      0%   { transform: translate(-50%, -50%) scale(1);   opacity: .75; }
+      100% { transform: translate(-50%, -170%) scale(.2); opacity: 0; }
+    }
+
+    /* =========================================================================
+       JULIO: contenedor del delfín (transform controlado por JS)
+       ========================================================================= */
+    .scene{
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      /* Importante: para que arrastrar no haga scroll/zoom raro */
+      touch-action: none;
+    }
+
+    .julio{
+      position: absolute;
+      left: 0;
+      top: 0;
+      will-change: transform;
+      transform: translate3d(0,0,0);
+      filter: drop-shadow(0 18px 22px rgba(0,0,0,.25));
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* SVG responsive */
+    .dolphin{
+      width: min(360px, 62vw);
+      height: auto;
+      display: block;
+      opacity: .98;
+    }
+
+    /* Cola moviéndose para simular nado */
+    .tail{
+      transform-origin: 78% 55%;
+      animation: tailSwish .35s ease-in-out infinite;
+    }
+    @keyframes tailSwish{
+      0%,100%{ transform: rotate(10deg); }
+      50%{ transform: rotate(-12deg); }
+    }
+
+    /* Un wiggle sutil de todo el cuerpo */
+    .body-wiggle{
+      transform-origin: 50% 50%;
+      animation: bodyWiggle .7s ease-in-out infinite;
+    }
+    @keyframes bodyWiggle{
+      0%,100%{ transform: rotate(.6deg); }
+      50%{ transform: rotate(-.6deg); }
+    }
+
+    /* Badge con el nombre “Julio” pegado al delfín */
+    .name-badge{
+      position: absolute;
+      left: 50%;
+      top: 100%;
+      transform: translate(-50%, 10px);
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(0,0,0,.22);
+      border: 1px solid rgba(255,255,255,.18);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      font-weight: 800;
+      letter-spacing: .3px;
+      font-size: 13px;
+      white-space: nowrap;
+      text-shadow: 0 2px 14px rgba(0,0,0,.35);
+      pointer-events: none;
+    }
+
+    /* Splash al aterrizar (creado por JS) */
+    .splash{
+      position: absolute;
+      width: 120px;
+      height: 50px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.35);
+      border-top-color: transparent;
+      border-left-color: rgba(255,255,255,.22);
+      border-right-color: rgba(255,255,255,.22);
+      opacity: .9;
+      transform: translate(-50%, -50%) scale(.6);
+      animation: splash 650ms ease-out forwards;
+      pointer-events: none;
+      z-index: 4;
+      filter: blur(.2px);
+    }
+
+    @keyframes splash{
+      0%   { transform: translate(-50%, -50%) scale(.5); opacity: .9; }
+      100% { transform: translate(-50%, -50%) scale(1.25); opacity: 0; }
+    }
+
+    /* Accesibilidad: si el usuario pide menos movimiento, apagamos animaciones CSS */
+    @media (prefers-reduced-motion: reduce){
+  .waves::before, .waves::after, .tail, .body-wiggle{ animation: none !important; }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Texto superior: explícito y directo -->
+  <div class="hud">
+    <div>
+      <p class="title">El delfín <span style="text-decoration: underline;">Julio</span> 🐬</p>
+      <p class="sub">
+        Arrastralo para que te siga.
+        Hacé clic para que <strong>Julio</strong> salte fuera del agua.
+      </p>
+    </div>
+    <div class="chip">Interactivo ✅</div>
+  </div>
+
+  <!-- Fondo -->
+  <div class="waves" aria-hidden="true"></div>
+  <div class="waterline" aria-hidden="true"></div>
+
+  <!-- Burbujas automáticas -->
+  <div class="bubbles" aria-hidden="true" id="bubbles">
+    <div class="bubble"></div>
+    <div class="bubble"></div>
+    <div class="bubble"></div>
+    <div class="bubble"></div>
+    <div class="bubble"></div>
+    <div class="bubble"></div>
+  </div>
+
+  <!-- Escena interactiva -->
+  <div class="scene" id="scene" aria-label="Escena con Julio el delfín">
+
+    <!-- JULIO (transform controlado por JS) -->
+    <div class="julio" id="julio">
+      <svg class="dolphin" viewBox="0 0 640 260" role="img" aria-label="Julio el delfín nadando">
+        <defs>
+          <linearGradient id="gBody" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0" stop-color="#c9f2ff" stop-opacity="0.95"></stop>
+            <stop offset="0.45" stop-color="#7ad1e6" stop-opacity="0.95"></stop>
+            <stop offset="1" stop-color="#1c6f9a" stop-opacity="0.98"></stop>
+          </linearGradient>
+
+          <linearGradient id="gBelly" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0" stop-color="#f6feff" stop-opacity="0.85"></stop>
+            <stop offset="1" stop-color="#a7e6f7" stop-opacity="0.55"></stop>
+          </linearGradient>
+
+          <radialGradient id="gHighlight" cx="35%" cy="35%" r="75%">
+            <stop offset="0" stop-color="rgba(255,255,255,0.55)"></stop>
+            <stop offset="1" stop-color="rgba(255,255,255,0)"></stop>
+          </radialGradient>
+        </defs>
+
+        <g class="body-wiggle">
+          <!-- Cuerpo principal -->
+          <path
+            d="M95,145
+               C130,92 215,62 315,70
+               C400,76 458,100 520,124
+               C560,140 592,150 610,145
+               C600,172 570,190 530,195
+               C474,203 416,196 350,196
+               C270,196 188,188 130,174
+               C110,169 98,160 95,145Z"
+            fill="url(#gBody)"
+            stroke="rgba(255,255,255,.12)"
+            stroke-width="3"
+          />
+
+          <!-- Barriga -->
+          <path
+            d="M118,150
+               C160,170 220,182 300,182
+               C382,182 450,176 500,165
+               C450,195 390,208 310,210
+               C220,210 150,192 118,170Z"
+            fill="url(#gBelly)"
+            opacity="0.85"
+          />
+
+          <!-- Aleta dorsal -->
+          <path
+            d="M300,90
+               C290,65 312,46 340,58
+               C360,66 365,86 352,96
+               C338,108 314,107 300,90Z"
+            fill="rgba(255,255,255,.18)"
+            stroke="rgba(0,0,0,.10)"
+            stroke-width="2"
+          />
+
+          <!-- Aleta lateral -->
+          <path
+            d="M270,158
+               C252,152 236,162 230,176
+               C225,190 244,196 260,188
+               C276,180 284,166 270,158Z"
+            fill="rgba(255,255,255,.16)"
+            stroke="rgba(0,0,0,.10)"
+            stroke-width="2"
+          />
+
+          <!-- Hocico -->
+          <path
+            d="M520,124
+               C555,138 590,150 610,145
+               C596,138 575,126 550,114
+               C532,105 512,110 520,124Z"
+            fill="rgba(255,255,255,.14)"
+          />
+
+          <!-- Ojo -->
+          <circle cx="505" cy="125" r="6.5" fill="rgba(0,0,0,.55)"/>
+          <circle cx="503" cy="123" r="2.2" fill="rgba(255,255,255,.75)"/>
+
+          <!-- Brillo -->
+          <ellipse cx="260" cy="105" rx="210" ry="90" fill="url(#gHighlight)" opacity="0.55"/>
+        </g>
+
+        <!-- Cola animada -->
+        <g class="tail">
+          <path
+            d="M95,145
+               C70,132 52,130 34,136
+               C22,140 14,152 18,164
+               C24,183 56,188 92,170
+               C104,164 104,152 95,145Z"
+            fill="rgba(255,255,255,.16)"
+            stroke="rgba(0,0,0,.10)"
+            stroke-width="2"
+          />
+
+          <path
+            d="M34,136
+               C14,120 6,98 20,88
+               C44,72 70,100 66,132
+               C56,140 46,142 34,136Z"
+            fill="rgba(255,255,255,.18)"
+            stroke="rgba(0,0,0,.10)"
+            stroke-width="2"
+          />
+          <path
+            d="M34,164
+               C10,174 0,198 16,210
+               C40,228 72,200 66,168
+               C56,160 46,158 34,164Z"
+            fill="rgba(255,255,255,.18)"
+            stroke="rgba(0,0,0,.10)"
+            stroke-width="2"
+          />
+        </g>
+      </svg>
+
+      <!-- Badge: CLARITO que se llama Julio -->
+      <div class="name-badge">JULIO</div>
+    </div>
+  </div>
+
+  <script>
+    /* =========================================================================
+       LÓGICA DE MOVIMIENTO (JS)
+       - Autopiloto: Julio nada de lado a lado con un wave vertical sutil.
+       - Drag: cuando tocás/arrastrás, Julio te sigue.
+       - Jump: en tap/click, Julio salta “fuera del agua” con gravedad.
+       ========================================================================= */
+
+    (function () {
+      const scene = document.getElementById("scene");
+      const julio = document.getElementById("julio");
+      const bubbles = document.getElementById("bubbles");
+
+      // Dimensiones y estado dinámico
+      let vw = window.innerWidth;
+      let vh = window.innerHeight;
+
+      // Waterline en px (coincide con --waterline: 58vh)
+      const getWaterlinePx = () => Math.round(vh * 0.58);
+
+      // Estado de Julio (posición en px dentro del viewport)
+      const state = {
+        x: Math.round(vw * 0.2),
+        y: getWaterlinePx(),     // base (sobre la “línea de agua”)
+        dir: 1,                  // 1 = derecha, -1 = izquierda
+        speed: 220,              // px/seg (velocidad horizontal)
+        bobT: 0,                 // tiempo para bobbing
+        bobAmp: 18,              // amplitud del bobbing vertical (px)
+
+        // Jump physics (offset adicional vertical)
+        jumpY: 0,                // offset (negativo = arriba)
+        jumpV: 0,                // velocidad vertical px/seg
+        jumping: false,
+
+        // Interacción (drag)
+        dragging: false,
+        dragOffsetX: 0,
+        dragOffsetY: 0,
+
+        // Rotación (inclinación al subir/bajar)
+        angle: 0,
+      };
+
+      // Reducir movimiento si el usuario lo pide 
+      const reduceMotion = false;
+
+      // Helper: clamp para mantener valores dentro de límites
+      function clamp(v, min, max) {
+        return Math.max(min, Math.min(max, v));
+      }
+
+      // Helper: crea burbujas “event” en una posición
+      function spawnBubbles(x, y, count = 5) {
+        for (let i = 0; i < count; i++) {
+          const b = document.createElement("div");
+          b.className = "event-bubble";
+
+          // Random leve para que no salgan todas iguales
+          const jitterX = (Math.random() - 0.5) * 26;
+          const jitterY = (Math.random() - 0.5) * 16;
+          const size = 7 + Math.random() * 12;
+
+          b.style.left = (x + jitterX) + "px";
+          b.style.top = (y + jitterY) + "px";
+          b.style.width = size + "px";
+          b.style.height = size + "px";
+
+          bubbles.appendChild(b);
+          // Limpieza al terminar
+          setTimeout(() => b.remove(), 950);
+        }
+      }
+
+      // Helper: splash visual al tocar el agua (aterrizaje del salto)
+      function spawnSplash(x, y) {
+        const s = document.createElement("div");
+        s.className = "splash";
+        s.style.left = x + "px";
+        s.style.top = y + "px";
+        scene.appendChild(s);
+        setTimeout(() => s.remove(), 700);
+      }
+
+      // Actualiza transform del delfín según state
+      function render() {
+        // Dirección: usamos scaleX para girar al delfín
+        const dirScale = state.dir === 1 ? 1 : -1;
+
+        // Transform final:
+        // - translate3d: coloca al delfín
+        // - scaleX: lo da vuelta cuando cambia dirección
+        // - rotate: inclina levemente cuando salta
+        julio.style.transform =
+          `translate3d(${state.x}px, ${state.y + state.jumpY}px, 0) ` +
+          `scaleX(${dirScale}) rotate(${state.angle}deg)`;
+      }
+
+      // Tap/click -> salto (si no estamos arrastrando)
+      function tryJump() {
+        if (reduceMotion) return;          // si reduce motion, no metemos física
+        if (state.dragging) return;        // no saltar mientras arrastra
+        if (state.jumping) return;         // no apilar saltos
+
+        state.jumping = true;
+        state.jumpY = 0;
+        state.jumpV = -900;                // velocidad inicial (hacia arriba)
+        spawnBubbles(state.x + 140, getWaterlinePx() + 10, 6); // burbujas al iniciar
+      }
+
+      // Drag: pointer events (funciona en touch + mouse)
+      function onPointerDown(e) {
+        // Si es touch, evitamos que la página haga scroll/zoom raro
+        e.preventDefault();
+
+        // Activamos drag
+        state.dragging = true;
+
+        // Calculamos el offset para que no “salte” al dedo
+        // (posición del dedo - posición actual del delfín)
+        state.dragOffsetX = e.clientX - state.x;
+        state.dragOffsetY = e.clientY - (state.y + state.jumpY);
+
+        // Si estaba saltando, lo “cortamos” y lo bajamos al agua
+        state.jumping = false;
+        state.jumpY = 0;
+        state.jumpV = 0;
+
+        // Burbujitas al agarrarlo
+        spawnBubbles(e.clientX, e.clientY, 4);
+      }
+
+      function onPointerMove(e) {
+        if (!state.dragging) return;
+        e.preventDefault();
+
+        // Nueva posición siguiendo el dedo
+        const targetX = e.clientX - state.dragOffsetX;
+        const targetY = e.clientY - state.dragOffsetY;
+
+        // Límites: que no se vaya fuera de pantalla
+        const marginX = 40;
+        const marginY = 40;
+
+        state.x = clamp(targetX, -vw * 0.2, vw - marginX); // permitimos un poco “afuera” para feeling natural
+        state.y = clamp(targetY, marginY, vh - marginY);
+
+        // Dirección: si arrastrás hacia un lado, lo orientamos hacia ese lado
+        // (esto hace que “mire” en dirección del movimiento)
+        // Usamos un delta simple, comparando con la mitad de pantalla.
+        state.dir = (e.movementX >= 0) ? 1 : -1;
+
+        // Burbujas suaves mientras arrastrás (no demasiadas)
+        if (Math.random() < 0.12) spawnBubbles(e.clientX, e.clientY, 1);
+      }
+
+      function onPointerUp(e) {
+        if (!state.dragging) return;
+        e.preventDefault();
+
+        state.dragging = false;
+
+        // Cuando soltás, lo llevamos suavemente hacia la “zona agua” (waterline)
+        // para que retome el nado sin quedar arriba del todo.
+        const wl = getWaterlinePx();
+        state.y = clamp(state.y, 80, wl + 120);
+
+        // Un poquito de burbujas al soltar
+        spawnBubbles(e.clientX, e.clientY, 3);
+      }
+
+      // Autopiloto: movimiento continuo en requestAnimationFrame
+      let lastTs = performance.now();
+
+      function tick(ts) {
+        const dt = Math.min(0.033, (ts - lastTs) / 1000); // dt máximo ~33ms para estabilidad
+        lastTs = ts;
+
+        // Recalcular waterline cada frame por si cambia el viewport
+        const wl = getWaterlinePx();
+
+        // Si no está en drag, nada automático
+        if (!state.dragging) {
+          if (!reduceMotion) {
+            // Movimiento horizontal
+            state.x += state.dir * state.speed * dt;
+
+            // Si llega a bordes, rebota y se da vuelta
+            const leftBound = -vw * 0.22;
+            const rightBound = vw - 40;
+
+            if (state.x < leftBound) {
+              state.x = leftBound;
+              state.dir = 1;
+            } else if (state.x > rightBound) {
+              state.x = rightBound;
+              state.dir = -1;
+            }
+
+            // Bobbing vertical (oleaje)
+            state.bobT += dt * 1.7;
+            const bob = Math.sin(state.bobT) * state.bobAmp;
+
+            // Base y: cerca de waterline pero un poco por debajo/arriba
+            // (ajustá este número si querés más “profundo”)
+            state.y = wl + 20 + bob;
+          } else {
+            // Si reduce motion: lo dejamos quieto y visible
+            state.x = clamp(state.x, 30, vw - 200);
+            state.y = clamp(state.y, 100, vh - 200);
+          }
+        }
+
+        // Jump physics (si está saltando)
+        if (state.jumping && !reduceMotion) {
+          // Integración simple: y = y + v*dt, v = v + g*dt
+          const gravity = 1800; // px/seg^2 (hacia abajo)
+          state.jumpY += state.jumpV * dt;
+          state.jumpV += gravity * dt;
+
+          // Angulo según velocidad: subiendo = nariz arriba, cayendo = abajo
+          const targetAngle = clamp(-state.jumpV / 60, -18, 18);
+          state.angle += (targetAngle - state.angle) * 0.15;
+
+          // Si cae y cruza el “agua” (jumpY >= 0) -> aterriza
+          if (state.jumpY >= 0) {
+            state.jumpY = 0;
+            state.jumpV = 0;
+            state.jumping = false;
+            state.angle = 0;
+
+            // Splash justo en el waterline
+            spawnSplash(state.x + 150, wl + 10);
+            spawnBubbles(state.x + 150, wl + 10, 8);
+          }
+        } else {
+          // Si no está saltando, volvemos a ángulo neutro suavemente
+          state.angle += (0 - state.angle) * 0.12;
+        }
+
+        render();
+        requestAnimationFrame(tick);
+      }
+
+      // Click/tap -> salto
+      scene.addEventListener("click", (e) => {
+        // Si el click vino inmediatamente después de un drag, lo ignoramos
+        // (evita “salto involuntario” al soltar)
+        if (state.dragging) return;
+        tryJump();
+      }, { passive: false });
+
+      // Pointer events (drag)
+      scene.addEventListener("pointerdown", onPointerDown, { passive: false });
+      scene.addEventListener("pointermove", onPointerMove, { passive: false });
+      scene.addEventListener("pointerup", onPointerUp, { passive: false });
+      scene.addEventListener("pointercancel", onPointerUp, { passive: false });
+
+      // Resize handler (rotación del celular / cambio de tamaño)
+      window.addEventListener("resize", () => {
+        vw = window.innerWidth;
+        vh = window.innerHeight;
+        // Reclamp por si quedó afuera
+        state.x = clamp(state.x, -vw * 0.22, vw - 40);
+        state.y = clamp(state.y, 60, vh - 60);
+      });
+
+      // Posición inicial coherente + primer render
+      render();
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
 </html>
